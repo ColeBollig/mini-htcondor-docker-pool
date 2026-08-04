@@ -1,0 +1,80 @@
+services:
+   # Set up Central Manager host
+   cm:
+      build:
+         context: ./system
+         dockerfile: cm/Dockerfile
+         args:
+             AP_HOSTNAME: ${AP_HOST}
+             EP_HOSTNAME: ${EP_HOST}
+             SIGNING_SECRET: ${SECRET}
+             USER_PASSWORD: ${USER_PASSWORD}
+             USER_NAME: ${USER_NAME}
+      hostname: ${CM_HOST}
+      ports:
+         - 2000:22
+      environment:
+         - CONDOR_HOST=${CM_HOST}
+      networks:
+         - compute
+
+   # Set up Access Point host 
+   ap:
+      build:
+         context: ./system
+         dockerfile: ap/Dockerfile
+         args:
+             CM_HOSTNAME: ${CM_HOST}
+             REMOTE_HOSTNAME: ${REMOTE_HOST}
+             SIGNING_SECRET: ${SECRET}
+             USER_PASSWORD: ${USER_PASSWORD}
+             USER_NAME: ${USER_NAME}
+      hostname: ${AP_HOST}
+      ports:
+         - 2001:22
+      environment:
+         - CONDOR_HOST=${CM_HOST}
+      networks:
+         - compute
+      depends_on:
+         - cm
+
+   # Set up Execution Point host
+   ep:
+      build:
+         context: ./system
+         dockerfile: ep/Dockerfile
+         args:
+             CM_HOSTNAME: ${CM_HOST}
+             SIGNING_SECRET: ${SECRET}
+             USER_PASSWORD: ${USER_PASSWORD}
+             USER_NAME: ${USER_NAME}
+      hostname: ${EP_HOST}
+      ports:
+         - 2002:22
+      environment:
+         - CONDOR_HOST=${CM_HOST}
+      networks:
+         - compute
+      depends_on:
+         - cm
+
+   # Set up Remote Submission host 
+   # Note: Only contains HTCondor python API
+   remote:
+     build:
+        context: ./remote
+        args:
+            AP_HOSTNAME: ${AP_HOST}
+            USER_PASSWORD: ${USER_PASSWORD}
+            USER_NAME: ${USER_NAME}
+     hostname: ${REMOTE_HOST}
+     ports:
+        - 2003:22
+     networks:
+        - compute
+     depends_on:
+        - ap
+
+networks:
+   compute:

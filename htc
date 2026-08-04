@@ -1,0 +1,75 @@
+#!/bin/bash
+
+log_info() {
+  printf "\e[0;35m $1\e[0m\n"
+}
+
+log_warn() {
+  printf "\e[0;33m $1\e[0m\n"
+}
+
+start() {
+    while IFS="=" read -r key value; do
+        if [[ "$key" == "USER_NAME" ]]; then
+             USER_NAME="$value"
+             break
+        fi
+    done < ".env"
+
+    while IFS="=" read -r key value; do
+        if [[ "$key" == "USER_PASSWORD" ]]; then
+             PASSWORD="$value"
+             break
+        fi
+    done < ".env"
+
+    if [[ "$USER_NAME" == "" ]]; then
+        log_warn "ERROR: Failed to find HTC Pool user in .env"
+        exit 2
+    fi
+
+    if [[ "$PASSWORD" == "" ]]; then
+        log_warn "ERROR: Failed to find HTC Pool user password in .env"
+        exit 2
+    fi
+
+    log_info "Starting HTC Pool"
+    docker compose up -d --build
+
+    log_info "Login to Central Manager Host-: ssh -p 2000 $USER_NAME@localhost"
+    log_info "Login to Access Point Host----: ssh -p 2001 $USER_NAME@localhost"
+    log_info "Login to Execution Point Host-: ssh -p 2002 $USER_NAME@localhost"
+    log_info "Login to Remote Submit Host---: ssh -p 2003 $USER_NAME@localhost"
+
+    echo ""
+    log_info "User $USER_NAME password: $PASSWORD"
+}
+
+stop() {
+    log_info "Stopping HTC Pool containers..."
+    docker compose down
+}
+
+help() {
+    log_info "Usage: $0 { help | fly | perch }"
+    log_info "Execute accurate self contained mini HTCondor Pool"
+    log_info "    help      Display tool usage"
+    log_info "    fly       Start up docker environment"
+    log_info "    perch     Stop docker environment"
+}
+
+case "$1" in
+    'help')
+        help
+        ;;
+    'fly')
+        start
+        ;;
+    'perch')
+        stop
+        ;;
+    *)
+        help
+        exit 1
+        ;;
+esac
