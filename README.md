@@ -1,27 +1,16 @@
-# mini-htcondor-docker-pool
+# Miniature Dockerized HTCondor System
 
-A small, self-contained [HTCondor](https://htcondor.org/) pool built with Docker Compose — useful for demos, testing, and learning how an HTCondor pool fits together, without needing real hardware.
-
-## What it builds
-
-| Host | Role | SSH port |
-|---|---|---|
-| `cm` | Central Manager | 2000 |
-| `ap` | Access Point (submit host) | 2001 |
-| `ep` | Execution Point (worker) | 2002 |
-| `remote` | Remote submit host (Python bindings only, no local HTCondor daemons) | 2003 |
-
-All hosts share a single Docker network and authenticate to each other using IDTOKENs signed with a shared secret. The `remote` host fetches a submission token from the `ap` host over SSH at boot, so it can submit jobs to the pool without running its own daemons.
+A small, self-contained [HTCondor](https://htcondor.org/) system built with Docker Compose — useful for demos, testing, and learning how an HTCondor system fits together, without needing real hardware.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     subgraph compute["docker network: compute"]
-        CM["Central Manager (cm)<br/>collector + negotiator"]
-        AP["Access Point (ap)<br/>schedd"]
-        EP["Execution Point (ep)<br/>startd"]
-        Remote["Remote Submit Host (remote)<br/>python bindings only"]
+        CM["Central Manager (CM)<br/>collector + negotiator"]
+        AP["Access Point (AP)<br/>schedd"]
+        EP["Execution Point (EP)<br/>startd"]
+        Remote["Remote Submit Host (Remote)<br/>python bindings only"]
     end
 
     AP -- advertise schedd --> CM
@@ -33,46 +22,52 @@ flowchart LR
     Remote -- submit jobs --> AP
 ```
 
-`cm` is the pool's collector/negotiator, `ap` hosts the schedd jobs are submitted to, and `ep` runs the startd that executes them. `remote` has no HTCondor daemons of its own — it only carries the Python bindings and a token good for submitting through `ap`.
+- Central Manager: Host machine in charge of matching jobs to resources
+- Access Point: Host machine that manages/tracks user jobs
+- Execution Point: Host machine that executes user jobs
+- Remote: Host machine with only python API installed for remote AP job placement
 
-## Authentication
+> [!NOTE]
+> This miniature system is set up to use IDTOKEN authentication
+> for everything.
 
-- All three pool daemons (`cm`, `ap`, `ep`) are seeded with the same `SIGNING_SECRET` via `condor_store_cred`, which they use to mint and validate IDTOKENs for daemon-to-daemon auth.
-- `cm`'s Dockerfile explicitly allows `ap` to advertise a schedd and `ep` to advertise a startd (`ALLOW_ADVERTISE_*`), so only those two hosts can register with the pool.
-- `remote` submission uses a separate mechanism: `ap` generates its own random signing key at build time (`remote-signing-key`) just for issuing tokens to remote users. At container boot, `remote` SSHes into `ap`, runs `condor_token_fetch`, and stores the result at `~/.condor/tokens.d/ap-token` — that token is what lets it submit jobs without holding the pool's main signing secret.
+## Docker Configuration
 
-## Requirements
+Controls docker build aspects defined in `.env`.
 
-- Docker and Docker Compose
-- `sshpass` if you plan to SSH in without typing the password each time
-
-## Configuration
-
-Pool settings live in `.env`:
-
-```
-CM_HOST=cm.test.host
-AP_HOST=ap.test.host
-EP_HOST=ep.test.host
-REMOTE_HOST=remote.test.host
-SECRET=SuperSecretPassword
-USER_PASSWORD=pass123
-USER_NAME=tweety
-```
+| Option | Purpose |
+|---|---|
+| CM_HOST | Central Manager hostname |
+| AP_HOST | Access Point hostname |
+| EP_HOST | Execution Point hostname |
+| REMOTE_HOST | Remote submission hostname |
+| SECRET | Shared secret for daemon idtoken signing |
+| USER_PASSWORD | User password for ssh access |
+| USER_NAME | Username for ssh access and job submission |
 
 Edit these before building if you want different hostnames, credentials, or the shared signing secret.
+
+## HTCondor Configuration
+
+Custom HTCondor configuration can be specified before building the docker
+containers in the following two methods:
+
+1. Add configuration file to `system/config/` to control HTCondor behavior
+   on the AP, EP, and CM.
+2. Update `remote/user.conf` to control behavior on the remote submission
+   host.
 
 ## Usage
 
 The `htc` script wraps Docker Compose:
 
 ```
-./htc fly     # build and start the pool
-./htc perch   # stop the pool
+./htc fly     # build and start the system
+./htc perch   # stop the system
 ./htc help    # usage
 ```
 
-On startup it prints SSH login commands and the pool user's password for each host.
+On startup it prints SSH login commands and the system user's password for each host.
 
 ## Logging in
 
@@ -83,16 +78,17 @@ ssh -p 2002 tweety@localhost   # Execution Point
 ssh -p 2003 tweety@localhost   # Remote submit host
 ```
 
-From `ap` (or `remote`), submit jobs as usual with `condor_submit`.
+## Submitting jobs
 
-## Layout
+From `ap` (or `remote`), submit jobs as usual with `condor_submit`:
 
 ```
-docker-compose.yaml   # service definitions for cm, ap, ep, remote
-htc                    # start/stop helper script
-system/                # cm, ap, ep Dockerfiles + shared boot.sh + condor config
-remote/                # remote submit host Dockerfile, boot.sh, user condor config
+ssh -p 2001 tweety@localhost
+condor_submit /path/to/job.sub
+condor_q
 ```
+
+`remote` has no local schedd — it submits through `ap` using the IDTOKEN it fetches at boot (see the Architecture note above).
 
 ## Troubleshooting
 
