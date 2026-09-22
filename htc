@@ -34,7 +34,10 @@ start() {
     fi
 
     log_info "Starting HTC Pool"
-    docker compose up -d --build
+    # Disable Docker Compose Bake: newer Docker versions build with `docker
+    # buildx bake` by default, which can attempt to push images to a
+    # registry (e.g. Docker Hub) even though these services are local-only.
+    COMPOSE_BAKE=false docker compose up -d --build
 
     log_info "Login to Central Manager Host-: ssh -p 2000 $USER_NAME@localhost"
     log_info "Login to Access Point Host----: ssh -p 2001 $USER_NAME@localhost"
