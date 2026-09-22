@@ -60,6 +60,12 @@ containers in the following two methods:
 2. Update `remote/user.conf` to control behavior on the remote submission
    host.
 
+`.github/config/` holds CI-only tuning along the same lines (e.g. shrinking
+negotiation/update intervals so a job matches and finishes fast enough for a
+short-lived test run); `.github/workflows/htcondor-pool.yml` copies it into
+`system/config/` right before building, so it only ever affects the CI
+build.
+
 ## Getting files into a host
 
 Two optional, host-specific bind mounts are wired up in `docker-compose.yaml`,
@@ -86,6 +92,8 @@ of shipping it through the schedd:
 ```
 transfer_input_files = file:///staging/my-big-input.dat
 ```
+
+See `.github/fixtures/staging.sub` for a minimal working example.
 
 ## Usage
 
@@ -119,7 +127,7 @@ condor_submit /path/to/job.sub
 condor_q
 ```
 
-`remote` has no local schedd — it submits through `ap` using the IDTOKEN it fetches at boot (see the Architecture note above).
+`remote` has no local schedd (and no `condor_submit` CLI — only the `htcondor2` Python bindings are installed), so it submits directly to `ap`'s schedd using `htcondor2` and the IDTOKEN it fetches at boot (see the Architecture note above).
 
 ## Troubleshooting
 

@@ -2,6 +2,7 @@ FROM almalinux/9-base
 
 # Grab environment variables for set up
 ARG AP_HOSTNAME
+ARG CM_HOSTNAME
 ARG USER_PASSWORD
 ARG USER_NAME
 
@@ -31,7 +32,7 @@ WORKDIR /home/$USER_NAME
 RUN mkdir -p ~/.condor/tokens.d
 RUN mkdir -p ~/.condor/config
 
-# Copy over custom user configuration file  
+# Copy over custom user configuration file
 COPY user.conf .condor/config/condor_config
 RUN echo 'export CONDOR_CONFIG=~/.condor/config/condor_config' >> ~/.bashrc
 
@@ -46,5 +47,6 @@ COPY boot.sh /boot.sh
 ENV USER_NAME $USER_NAME
 ENV USER_PASSWORD $USER_PASSWORD
 ENV AP_HOSTNAME $AP_HOSTNAME
+ENV CM_HOSTNAME $CM_HOSTNAME
 
 ENTRYPOINT [ "/boot.sh" ]

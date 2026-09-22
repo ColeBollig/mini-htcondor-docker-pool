@@ -90,6 +90,7 @@ services:
         context: ./remote
         args:
             AP_HOSTNAME: ${AP_HOST}
+            CM_HOSTNAME: ${CM_HOST}
             USER_PASSWORD: ${USER_PASSWORD}
             USER_NAME: ${USER_NAME}
      hostname: ${REMOTE_HOST}

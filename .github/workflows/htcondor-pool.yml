@@ -1,0 +1,165 @@
+name: HTCondor Pool
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pool:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Load pool environment variables
+        run: |
+          set -a
+          source .env
+          set +a
+          {
+            echo "CM_HOST=$CM_HOST"
+            echo "AP_HOST=$AP_HOST"
+            echo "EP_HOST=$EP_HOST"
+            echo "REMOTE_HOST=$REMOTE_HOST"
+            echo "USER_NAME=$USER_NAME"
+            echo "USER_PASSWORD=$USER_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Point testing mounts at CI fixture directories
+        run: |
+          mkdir -p "$RUNNER_TEMP/ap-testing" "$RUNNER_TEMP/remote-testing"
+          cp .github/fixtures/hello.sub "$RUNNER_TEMP/ap-testing/hello.sub"
+          cp .github/fixtures/staging.sub "$RUNNER_TEMP/ap-testing/staging.sub"
+          cp .github/scripts/submit_job.py "$RUNNER_TEMP/remote-testing/submit_job.py"
+          {
+            echo "AP_TESTING_MOUNT=$RUNNER_TEMP/ap-testing"
+            echo "REMOTE_TESTING_MOUNT=$RUNNER_TEMP/remote-testing"
+          } >> "$GITHUB_ENV"
+
+      - name: Seed the shared /staging drive
+        run: echo "hello from the shared staging drive" > shared/staging/staging-input.txt
+
+      - name: Speed up the pool for CI
+        run: cp .github/config/*.conf system/config/
+
+      - name: Start HTCondor pool
+        run: ./htc fly
+
+      - name: Wait for HTCondor pool to be ready
+        run: |
+          echo "Waiting for the schedd on AP..."
+          timeout 180 bash -c '
+            until docker compose exec -T ap condor_status -schedd >/dev/null 2>&1; do
+              sleep 5
+            done
+          '
+
+          echo "Waiting for EP to register with the collector..."
+          timeout 180 bash -c '
+            until docker compose exec -T ap condor_status -startd 2>/dev/null | grep -q "$EP_HOST"; do
+              sleep 5
+            done
+          '
+
+          echo "Waiting for remote to fetch its IDTOKEN from AP..."
+          timeout 180 bash -c '
+            until docker compose exec -T remote test -f "/home/$USER_NAME/.condor/tokens.d/ap-token"; do
+              sleep 5
+            done
+          '
+
+      - name: Verify condor_q and condor_status on AP
+        run: |
+          docker compose exec -T ap condor_q
+          docker compose exec -T ap condor_status
+
+      - name: Verify testing and staging mounts are wired up
+        run: |
+          docker compose exec -T ap test -f "/home/$USER_NAME/testing/hello.sub"
+          docker compose exec -T remote test -f "/home/$USER_NAME/testing/submit_job.py"
+          docker compose exec -T ap test -f /staging/staging-input.txt
+          docker compose exec -T ep test -f /staging/staging-input.txt
+
+      - name: Submit a job on AP and verify it completes
+        run: |
+          docker compose exec -T -u "$USER_NAME" -w "/home/$USER_NAME/testing" ap bash -c '
+            set -e
+            cluster=$(condor_submit -terse hello.sub | head -1 | cut -d. -f1)
+            echo "Submitted cluster $cluster on AP"
+            condor_wait -wait 120 hello.log
+            exit_code=$(condor_history "$cluster" -af ExitCode)
+            echo "AP job exit code: $exit_code"
+            test "$exit_code" = "0"
+          '
+
+      - name: Submit a job using file:// transfer from /staging and verify it completes
+        run: |
+          docker compose exec -T -u "$USER_NAME" -w "/home/$USER_NAME/testing" ap bash -c '
+            set -e
+            cluster=$(condor_submit -terse staging.sub | head -1 | cut -d. -f1)
+            echo "Submitted cluster $cluster on AP (file:// input from /staging)"
+            condor_wait -wait 120 staging.log
+            exit_code=$(condor_history "$cluster" -af ExitCode)
+            echo "Staging job exit code: $exit_code"
+            test "$exit_code" = "0"
+            grep -qx "hello from the shared staging drive" staging.out
+          '
+
+      - name: Submit a job from remote and verify it completes
+        run: |
+          docker compose exec -T -u "$USER_NAME" -w "/home/$USER_NAME/testing" remote bash -lc '
+            set -e
+            python3 submit_job.py --wait
+          '
+
+      - name: Dump job queue state on failure
+        if: failure()
+        run: |
+          docker compose exec -T ap condor_q -allusers -af ClusterId Owner JobStatus HoldReason LastRemoteHost || true
+          docker compose exec -T ap condor_history -af ClusterId Owner JobStatus HoldReason ExitCode || true
+          docker compose exec -T ap condor_status -af Name State Activity || true
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Collect daemon and job logs on failure
+        if: failure()
+        run: |
+          mkdir -p "$RUNNER_TEMP/pool-logs"
+
+          # HTCondor daemon logs (SchedLog, NegotiatorLog, StartLog, etc.)
+          # from every host that actually runs condor daemons.
+          for svc in cm ap ep; do
+            log_dir=$(docker compose exec -T "$svc" condor_config_val LOG 2>/dev/null | tr -d '\r')
+            if [[ -n "$log_dir" ]]; then
+              docker compose cp "$svc:$log_dir" "$RUNNER_TEMP/pool-logs/$svc-condor-log" || true
+            fi
+          done
+
+          # The remote job's own output/error/log land in ap's /tmp (its
+          # initialdir), since it's submitted with no shared filesystem.
+          docker compose cp "ap:/tmp" "$RUNNER_TEMP/pool-logs/ap-tmp" || true
+
+          # Whatever's in the testing mounts (e.g. the AP job's hello.*)
+          # and the shared staging drive.
+          cp -r "$RUNNER_TEMP/ap-testing" "$RUNNER_TEMP/pool-logs/ap-testing" 2>/dev/null || true
+          cp -r "$RUNNER_TEMP/remote-testing" "$RUNNER_TEMP/pool-logs/remote-testing" 2>/dev/null || true
+          cp -r shared/staging "$RUNNER_TEMP/pool-logs/staging" 2>/dev/null || true
+
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/pool-logs.tar.gz" pool-logs
+
+      - name: Upload daemon and job logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pool-logs
+          path: ${{ runner.temp }}/pool-logs.tar.gz
+          retention-days: 7
+
+      - name: Tear down HTCondor pool
+        if: always()
+        run: ./htc destroy

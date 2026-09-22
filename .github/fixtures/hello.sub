@@ -1,0 +1,12 @@
+# Minimal job for smoke-testing submission on the AP.
+executable = /bin/echo
+arguments = "hello from the access point"
+
+output = hello.out
+error = hello.err
+log = hello.log
+
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+
+queue
