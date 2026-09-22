@@ -62,9 +62,10 @@ containers in the following two methods:
 The `htc` script wraps Docker Compose:
 
 ```
-./htc fly     # build and start the system
-./htc perch   # stop the system
-./htc help    # usage
+./htc fly       # build and start the system
+./htc perch     # stop the system
+./htc destroy   # stop the system and remove its images, volumes, and networks
+./htc help      # usage
 ```
 
 On startup it prints SSH login commands and the system user's password for each host.
