@@ -13,6 +13,8 @@ flowchart LR
         Remote["Remote Submit Host (Remote)<br/>python bindings only"]
     end
 
+    Staging[("Shared /staging drive")]
+
     AP -- advertise schedd --> CM
     EP -- advertise startd --> CM
     CM -- match --> AP
@@ -20,12 +22,15 @@ flowchart LR
     AP <-- job execution --> EP
     Remote -- SSH: fetch IDTOKEN --> AP
     Remote -- submit jobs --> AP
+    AP -- mounted at /staging --> Staging
+    EP -- mounted at /staging --> Staging
 ```
 
 - Central Manager: Host machine in charge of matching jobs to resources
 - Access Point: Host machine that manages/tracks user jobs
 - Execution Point: Host machine that executes user jobs
 - Remote: Host machine with only python API installed for remote AP job placement
+- Shared `/staging` drive: Bind mount shared between AP and EP for `file://` transfers, mirroring CHTC's real `/staging`
 
 > [!NOTE]
 > This miniature system is set up to use IDTOKEN authentication
