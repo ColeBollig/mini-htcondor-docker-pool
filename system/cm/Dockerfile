@@ -34,4 +34,8 @@ COPY config/ /etc/condor/config.d/
 
 # Get boot entrypoint
 COPY boot.sh /boot.sh
+
+# Set necessary environment variables for boot
+ENV USER_NAME $USER_NAME
+
 ENTRYPOINT [ "/boot.sh" ]

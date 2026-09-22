@@ -17,6 +17,10 @@ services:
          - CONDOR_HOST=${CM_HOST}
       networks:
          - compute
+      volumes:
+         # Optional: drop files here to have them copied into
+         # /home/${USER_NAME}/copy on this host at container start.
+         - ./shared/copy/cm:/mnt/copy-in:ro
 
    # Set up Access Point host 
    ap:
@@ -36,6 +40,18 @@ services:
          - CONDOR_HOST=${CM_HOST}
       networks:
          - compute
+      volumes:
+         # Optional: drop files here to have them copied into
+         # /home/${USER_NAME}/copy on this host at container start.
+         - ./shared/copy/ap:/mnt/copy-in:ro
+         # Optional: live read/write mount for testing, no copy step.
+         # Host path is user-configurable via AP_TESTING_MOUNT in .env.
+         - ${AP_TESTING_MOUNT:-./shared/mount/ap}:/home/${USER_NAME}/testing
+         # Shared drive between AP and EP, mirroring CHTC's /staging - for
+         # large-input jobs that pull data via `file://` instead of the
+         # normal schedd-mediated transfer. Host path is configurable via
+         # STAGING_MOUNT in .env.
+         - ${STAGING_MOUNT:-./shared/staging}:/staging
       depends_on:
          - cm
 
@@ -56,6 +72,14 @@ services:
          - CONDOR_HOST=${CM_HOST}
       networks:
          - compute
+      volumes:
+         # Optional: drop files here to have them copied into
+         # /home/${USER_NAME}/copy on this host at container start.
+         - ./shared/copy/ep:/mnt/copy-in:ro
+         # Shared drive between AP and EP, mirroring CHTC's /staging - see
+         # the ap service above. Host path is configurable via
+         # STAGING_MOUNT in .env.
+         - ${STAGING_MOUNT:-./shared/staging}:/staging
       depends_on:
          - cm
 
@@ -73,6 +97,13 @@ services:
         - 2003:22
      networks:
         - compute
+     volumes:
+        # Optional: drop files here to have them copied into
+        # /home/${USER_NAME}/copy on this host at container start.
+        - ./shared/copy/remote:/mnt/copy-in:ro
+        # Optional: live read/write mount for testing, no copy step.
+        # Host path is user-configurable via REMOTE_TESTING_MOUNT in .env.
+        - ${REMOTE_TESTING_MOUNT:-./shared/mount/remote}:/home/${USER_NAME}/testing
      depends_on:
         - ap
 
