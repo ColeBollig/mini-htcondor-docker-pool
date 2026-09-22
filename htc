@@ -34,7 +34,10 @@ start() {
     fi
 
     log_info "Starting HTC Pool"
-    docker compose up -d --build
+    # Disable Docker Compose Bake: newer Docker versions build with `docker
+    # buildx bake` by default, which can attempt to push images to a
+    # registry (e.g. Docker Hub) even though these services are local-only.
+    COMPOSE_BAKE=false docker compose up -d --build
 
     log_info "Login to Central Manager Host-: ssh -p 2000 $USER_NAME@localhost"
     log_info "Login to Access Point Host----: ssh -p 2001 $USER_NAME@localhost"
@@ -47,15 +50,21 @@ start() {
 
 stop() {
     log_info "Stopping HTC Pool containers..."
-    docker compose down
+    docker compose down --remove-orphans
+}
+
+destroy() {
+    log_warn "Destroying HTC Pool containers, images, volumes, and networks..."
+    docker compose down --rmi all --volumes --remove-orphans
 }
 
 help() {
-    log_info "Usage: $0 { help | fly | perch }"
+    log_info "Usage: $0 { help | fly | perch | destroy }"
     log_info "Execute accurate self contained mini HTCondor Pool"
     log_info "    help      Display tool usage"
     log_info "    fly       Start up docker environment"
     log_info "    perch     Stop docker environment"
+    log_info "    destroy   Stop docker environment and remove all images, volumes, and networks"
 }
 
 case "$1" in
@@ -67,6 +76,9 @@ case "$1" in
         ;;
     'perch')
         stop
+        ;;
+    'destroy')
+        destroy
         ;;
     *)
         help

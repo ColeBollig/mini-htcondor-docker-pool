@@ -1,0 +1,16 @@
+# Smoke-tests file:// transfer off the shared /staging drive: the input
+# file lives only in /staging (mounted on both ap and ep) and is pulled
+# into the job's sandbox by HTCondor's file transfer plugin, not shipped
+# through the schedd like a normal transfer_input_files entry would be.
+executable = /bin/cat
+arguments = staging-input.txt
+
+transfer_input_files = file:///staging/staging-input.txt
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+
+output = staging.out
+error = staging.err
+log = staging.log
+
+queue

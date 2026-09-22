@@ -33,19 +33,22 @@ flowchart LR
 
 ## Docker Configuration
 
-Controls docker build aspects defined in `.env`.
+Controls pool configuration defined in `.env`.
 
-| Option | Purpose |
-|---|---|
-| CM_HOST | Central Manager hostname |
-| AP_HOST | Access Point hostname |
-| EP_HOST | Execution Point hostname |
-| REMOTE_HOST | Remote submission hostname |
-| SECRET | Shared secret for daemon idtoken signing |
-| USER_PASSWORD | User password for ssh access |
-| USER_NAME | Username for ssh access and job submission |
+| Option | Purpose | Applied at |
+|---|---|---|
+| CM_HOST | Central Manager hostname | image build |
+| AP_HOST | Access Point hostname | image build |
+| EP_HOST | Execution Point hostname | image build |
+| REMOTE_HOST | Remote submission hostname | image build |
+| SECRET | Shared secret for daemon idtoken signing | image build |
+| USER_PASSWORD | User password for ssh access | image build |
+| USER_NAME | Username for ssh access and job submission | image build |
+| AP_TESTING_MOUNT | Host directory bind-mounted for testing on AP (default `./shared/mount/ap`) | container start |
+| REMOTE_TESTING_MOUNT | Host directory bind-mounted for testing on Remote (default `./shared/mount/remote`) | container start |
+| STAGING_MOUNT | Host directory bind-mounted at `/staging` on both AP and EP (default `./shared/staging`) | container start |
 
-Edit these before building if you want different hostnames, credentials, or the shared signing secret.
+Edit the "image build" options before building if you want different hostnames, credentials, or the shared signing secret — see the rebuild note under Troubleshooting. The "container start" options take effect on the next `docker compose up` (what `./htc fly` runs), no rebuild required.
 
 ## HTCondor Configuration
 
@@ -57,14 +60,50 @@ containers in the following two methods:
 2. Update `remote/user.conf` to control behavior on the remote submission
    host.
 
+`.github/config/` holds CI-only tuning along the same lines (e.g. shrinking
+negotiation/update intervals so a job matches and finishes fast enough for a
+short-lived test run); `.github/workflows/htcondor-pool.yml` copies it into
+`system/config/` right before building, so it only ever affects the CI
+build.
+
+## Getting files into a host
+
+Two optional, host-specific bind mounts are wired up in `docker-compose.yaml`,
+both no-ops (empty directories) unless you put something in them:
+
+- `shared/copy/<host>/` (all four hosts) is copied into `/home/$USER_NAME/copy` on
+  that host once, when the container boots. Use it to seed a host with files
+  — the copy only happens at startup, so re-run `./htc perch && ./htc fly`
+  (or `docker compose restart <host>`) to pick up changes.
+- `shared/mount/ap/` and `shared/mount/remote/` are live read/write bind mounts at
+  `/home/$USER_NAME/testing` on those hosts — changes on either side show up
+  immediately, no restart needed. Handy for iterating on submit files or
+  scripts without rebuilding images. The host-side path for each defaults to
+  `./shared/mount/ap` and `./shared/mount/remote`, but can be pointed anywhere
+  by setting `AP_TESTING_MOUNT` / `REMOTE_TESTING_MOUNT` in `.env` (e.g. to an
+  existing directory of test files elsewhere on your machine).
+
+`shared/staging/` (host-side, default; override with `STAGING_MOUNT` in
+`.env`) is mounted at `/staging` on both `ap` and `ep`, mirroring CHTC's real
+shared `/staging` drive between the AP and EPs. It's meant for large input
+data a job pulls directly via HTCondor's `file://` transfer mechanism instead
+of shipping it through the schedd:
+
+```
+transfer_input_files = file:///staging/my-big-input.dat
+```
+
+See `.github/fixtures/staging.sub` for a minimal working example.
+
 ## Usage
 
 The `htc` script wraps Docker Compose:
 
 ```
-./htc fly     # build and start the system
-./htc perch   # stop the system
-./htc help    # usage
+./htc fly       # build and start the system
+./htc perch     # stop the system
+./htc destroy   # stop the system and remove its images, volumes, and networks
+./htc help      # usage
 ```
 
 On startup it prints SSH login commands and the system user's password for each host.
@@ -88,7 +127,7 @@ condor_submit /path/to/job.sub
 condor_q
 ```
 
-`remote` has no local schedd — it submits through `ap` using the IDTOKEN it fetches at boot (see the Architecture note above).
+`remote` has no local schedd (and no `condor_submit` CLI — only the `htcondor2` Python bindings are installed), so it submits directly to `ap`'s schedd using `htcondor2` and the IDTOKEN it fetches at boot (see the Architecture note above).
 
 ## Troubleshooting
 

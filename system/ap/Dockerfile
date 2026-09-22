@@ -40,4 +40,8 @@ RUN echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
 
 # Copy boot entrypoint
 COPY boot.sh /boot.sh
+
+# Set necessary environment variables for boot
+ENV USER_NAME $USER_NAME
+
 ENTRYPOINT [ "/boot.sh" ]
